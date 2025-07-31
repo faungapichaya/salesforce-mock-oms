@@ -1,6 +1,6 @@
 # salesforce-mock-oms
 
-ตัวอย่าง Code เพื่อแสดงประสบการณ์การเชื่อมระบบ (Online Platfrom) เข้ากับ Salesforce 
+ตัวอย่าง Code เพื่อแสดงประสบการณ์การเชื่อมระบบ (Online Platform) เข้ากับ Salesforce 
 
 โดยใช้
 - Salesforce Apex Class 
@@ -17,7 +17,7 @@
 
 
 ## 
-[ Online Platfrom]
+[ Online Platform ]
         |
         | (REST API Webhook Integration)
         v
