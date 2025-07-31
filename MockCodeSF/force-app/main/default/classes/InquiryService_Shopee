@@ -1,0 +1,781 @@
+public without sharing class InquiryService_Shopee {
+
+    public class APIgetDetail_resObj {
+        public List<Online_Service_Log__c> onlineLogList {get;set;}
+        public ShopeeWebhookPayload orderres {get;set;}
+        public InvoiceResponseWrapper invoiceres {get;set;}
+        public EscrowResponseWrapper escrowdetail {get;set;}
+    }
+
+    public class ShopeeWebhookPayload {
+        public String error { get; set; }
+        public String message { get; set; }
+        public String request_id { get; set; }
+        public Response response { get; set; }
+        public String errorMsg { get; set; }
+        public List<Online_Service_Log__c> onlineLogList {get;set;}
+    }
+
+    public class TokenWrapper{
+        public String accessToken {get;set;}
+        public String refreshToken {get;set;}
+        public List<Online_Service_Log__c> onlineLogList {get;set;}
+    }
+    
+    public class Response {
+        public List<OrderList> order_list { get; set; }
+    }
+
+    public class OrderList {
+        public Boolean actual_shipping_fee_confirmed { get; set; }
+        public String buyer_cancel_reason { get; set; }
+        public String buyer_cpf_id { get; set; }
+        public Long buyer_user_id { get; set; }
+        public String buyer_username { get; set; }
+        public String cancel_by { get; set; }
+        public String cancel_reason { get; set; }
+        public Boolean cod { get; set; }
+        public Long create_time { get; set; }
+        public String currency2 { get; set; }
+        public Integer days_to_ship { get; set; }
+        public String dropshipper { get; set; }
+        public String dropshipper_phone { get; set; }
+        public Decimal estimated_shipping_fee { get; set; }
+        public String fulfillment_flag { get; set; }
+        public Boolean goods_to_declare { get; set; }
+        public String invoice_data { get; set; }
+        public List<ItemList> item_list { get; set; }
+        public String message_to_seller { get; set; }
+        public String note { get; set; }
+        public Long note_update_time { get; set; }
+        public String order_sn { get; set; }
+        public String order_status { get; set; }
+        public List<PackageList> package_list { get; set; }
+        public Long pay_time { get; set; }
+        public String payment_method { get; set; }
+        public Long pickup_done_time { get; set; }
+        public RecipientAddress recipient_address { get; set; }
+        public String region { get; set; }
+        public Decimal reverse_shipping_fee { get; set; }
+        public Long ship_by_date { get; set; }
+        public String shipping_carrier { get; set; }
+        public Boolean split_up { get; set; }
+        public Decimal total_amount { get; set; }
+        public Long update_time { get; set; }
+    }
+
+    public class ItemList {
+        public Boolean add_on_deal { get; set; }
+        public Long add_on_deal_id { get; set; }
+        public ImageInfo image_info { get; set; }
+        public Boolean is_b2c_owned_item { get; set; }
+        public Boolean is_prescription_item { get; set; }
+        public String item_id { get; set; }
+        public String item_name { get; set; }
+        public String item_sku { get; set; }
+        public Boolean main_item { get; set; }
+        public Decimal model_discounted_price { get; set; }
+        public Long model_id { get; set; }
+        public String model_name { get; set; }
+        public Decimal model_original_price { get; set; }
+        public Integer model_quantity_purchased { get; set; }
+        public String model_sku { get; set; }
+        public Long order_item_id { get; set; }
+        public List<String> product_location_id { get; set; }
+        public Long promotion_group_id { get; set; }
+        public Long promotion_id { get; set; }
+        public String promotion_type { get; set; }
+        public Decimal weight { get; set; }
+        public Boolean wholesale { get; set; }
+    }
+
+    public class ImageInfo {
+        public String image_url { get; set; }
+    }
+
+    public class PackageList {
+        public String group_shipment_id { get; set; }
+        public List<PackageItemList> item_list { get; set; }
+        public String logistics_status { get; set; }
+        public String package_number { get; set; }
+        public Integer parcel_chargeable_weight_gram { get; set; }
+        public String shipping_carrier { get; set; }
+        public Long logistics_channel_id { get; set; }
+        public Boolean allow_self_design_awb { get; set; }
+    }
+
+    public class PackageItemList {
+        public Long item_id { get; set; }
+        public Long model_id { get; set; }
+        public Integer model_quantity { get; set; }
+        public Long order_item_id { get; set; }
+        public String product_location_id { get; set; }
+        public Long promotion_group_id { get; set; }
+    }
+
+    public class RecipientAddress {
+        public String city { get; set; }
+        public String district { get; set; }
+        public String full_address { get; set; }
+        public String name { get; set; }
+        public String phone { get; set; }
+        public String region { get; set; }
+        public String state { get; set; }
+        public String town { get; set; }
+        public String zipcode { get; set; }
+    }
+    
+
+    @future(callout=true)
+    public static void getRefreshToken(Boolean isUpdateToken)
+    {
+
+        TokenWrapper tokenWrapper = new TokenWrapper();
+        List<Online_Service_Log__c> onlineLogList = new List<Online_Service_Log__c>();
+        Online_Service_Log__c oslog = new Online_Service_Log__c();
+        oslog.Service_Name__c = System.Label.Shopee_Get_Refresh_Token;//'Shopee Get Refresh Token'; 
+
+        Long dateTimes = Datetime.now().getTime();
+        Long tt = dateTimes / 1000; 
+        String timestamp = tt.toString();
+        String accessToken = '';
+        String refreshToken = '';
+        String errorMsg = '';
+
+        List<Shopee_Configuration__c> shopeeConfig = [SELECT Access_Token__c,Refresh_Token__c,Code__c FROM Shopee_Configuration__c];
+        if(shopeeConfig.size() > 0 )
+        {
+            if(shopeeConfig[0].Refresh_Token__c != null)
+            {
+                refreshToken = shopeeConfig[0].Refresh_Token__c;
+            }
+        }
+        Integer shopid = shopId != null ? integer.valueof(shopId) : null;
+        Integer partnerIdint = partnerId != null ? integer.valueof(partnerId) : null;
+        String reqbody = '{'+
+            '"shop_id": '+shopid+','+
+            '"refresh_token": '+ '"'+refreshToken+'",'+
+            '"partner_id": '+ partnerIdint +
+        '}';
+        System.debug('reqbody' + reqbody );  
+
+        Map<String,String> params = new Map<String,String>();
+
+        params.put('partner_id', partnerId);
+        params.put('timestamp', timestamp);
+
+        String paramSign = partnerId+getRefeshToken+timestamp;
+
+        String sign = WebServiceUtility.generateSignatureShopee(params,partnerKey,paramSign,getRefeshToken);
+
+        params.put('sign', sign);
+        
+        String url_param = WebServiceUtility.concatParam(params,'','URL');
+        System.debug('url_param' + url_param );  
+
+        List<String> validate_params = new List<String>{'sign','partner_id','timestamp'};
+        List<String> missing_params = WebServiceUtility.validateParam(params, validate_params);
+
+        if(missing_params.size() > 0)
+        {
+            String missingParams = '[\'' + String.join(missing_params, ',') + '\']';
+            errorMsg += 'the input parameter '+missingParams+' that is mandatory for processing this request is not supplied';
+            System.debug(errorMsg);  
+            oslog.Is_Success__c = false;
+            oslog.Status_Code__c = '400' + '\r\n\r\n' + 'Bad Request';
+            oslog.Message__c = errorMsg;
+            oslog.Response_Datetime__c = Datetime.now();
+            oslog.Send_Service_Datetime__c = null;
+            oslog.Service_Header__c = url_param.toString();
+            oslog.Service_Request__c = reqbody;
+            oslog.Service_Response__c = null;
+            onlineLogList.add(oslog);
+            tokenWrapper.onlineLogList = onlineLogList;
+            OnlineServiceLog.CreateOnlineServiceLog(tokenWrapper.onlineLogList);
+        }
+        else 
+        {    
+            HttpResponse response;
+            Integer retryCount = 0;
+            Boolean success = false;
+            while (retryCount < 3 && !success)  {                   
+                try {                    
+                    HttpRequest request = new HttpRequest();
+                    request.setEndpoint('callout:Shopee_Refresh_Access_Token' + url_param);
+                    request.setMethod('POST');
+                    request.setHeader('Content-Type', 'application/json');
+                    request.setBody(reqbody);
+            
+                    DateTime requestTime = System.now();
+                    Http http = new Http();
+                    response = http.send(request);
+                    
+                    //System.debug('API Response: ' + response.getBody());
+            
+                    if (response.getBody() != null) {
+                        Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
+            
+                        if (String.isBlank((String) responseMap.get('error'))) { 
+                            accessToken = responseMap.containsKey('access_token') ? (String) responseMap.get('access_token') : '';
+                            refreshToken = responseMap.containsKey('refresh_token') ? (String) responseMap.get('refresh_token') : '';
+                            
+                            tokenWrapper.accessToken = accessToken;
+                            tokenWrapper.refreshToken = refreshToken;
+                            
+                            oslog.Is_Success__c = true;
+                            oslog.Status_Code__c = '200' + '\r\n\r\n' + 'OK';
+                            oslog.Message__c = 'Token refreshed successfully';
+                            success = true;
+                            
+                        } else { 
+                            System.debug('Error Response: ' + responseMap.get('message'));
+                            oslog.Is_Success__c = false;
+                            oslog.Status_Code__c = '400' + '\r\n\r\n' + 'Bad Request';
+                            oslog.Message__c = (String) responseMap.get('message');
+                        }
+                    } else {
+                        System.debug('Error: Received empty response body.');
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '500' + '\r\n\r\n' + 'No Response';
+                        oslog.Message__c = 'Error: No response received from Shopee API.';
+                    }
+            
+                    oslog.Response_Datetime__c = DateTime.now();
+                    oslog.Send_Service_Datetime__c = requestTime.format('EEE, MMM d yyyy HH:mm:ss', 'Asia/Bangkok');
+                    oslog.Service_Header__c = url_param.toString();
+                    oslog.Service_Request__c = request.getBody();
+                    oslog.Service_Response__c = response.getBody();
+                    onlineLogList.add(oslog);
+                } catch (Exception e) {
+                    System.debug('Exception Occurred: ' + e.getMessage());
+                    oslog.Is_Success__c = false;
+                    oslog.Status_Code__c = '500' + '\r\n\r\n' + 'Internal Error';
+                    oslog.Message__c = 'Exception: ' + e.getMessage();
+                    oslog.Response_Datetime__c = DateTime.now();
+                }
+                if (!success) {
+                    retryCount++;
+                    System.debug('Retrying... Attempt #' + retryCount);
+                }
+            }
+            
+            tokenWrapper.onlineLogList = onlineLogList;
+            OnlineServiceLog.CreateOnlineServiceLog(tokenWrapper.onlineLogList);
+            
+            if (isUpdateToken && success) {
+                WebServiceUtility.updateToken(tokenWrapper.accessToken, tokenWrapper.refreshToken, 'Shopee');
+            }
+        }
+    }
+
+    public static APIgetDetail_resObj getShopeeOrderList(String ordersn){
+        Boolean isSuccess = false;
+        String errorMsg = '';
+        String accessToken = '';
+        String body = '';
+
+        APIgetDetail_resObj resObj = new APIgetDetail_resObj();
+        ShopeeWebhookPayload shopeeOrderWrapper = new ShopeeWebhookPayload();
+        List<Online_Service_Log__c> onlineLogList = new List<Online_Service_Log__c>();
+        TokenWrapper tokenWrapper = new tokenWrapper();
+
+        Online_Service_Log__c oslog = new Online_Service_Log__c();
+        oslog.Service_Name__c = System.label.Shopee_Get_Order_Detail;	 //'Shopee Order Detail';
+
+        try {
+            List<Shopee_Configuration__c> shopeeConfig = [SELECT Access_Token__c,Refresh_Token__c,Code__c FROM Shopee_Configuration__c LIMIT 1];   
+            // // System.debug('shopeeConfig:'+shopeeConfig);     
+            System.debug('shopeeConfig:'+shopeeConfig );     
+
+            if(shopeeConfig.size()  > 0 ){
+                System.debug('shopeeConfig:' ); 
+                if(shopeeConfig[0].Access_Token__c != null )
+                {
+                    accessToken = shopeeConfig[0].Access_Token__c;
+                }
+            }
+
+            Long dateTimes = Datetime.now().getTime();
+            Long tt = dateTimes / 1000; 
+            String timestamp = tt.toString();
+            Map<String,String> params = new Map<String,String>();
+
+            params.put('access_token', accessToken);
+            params.put('partner_id', partnerId);
+            params.put('timestamp', timestamp);
+            params.put('shop_id', shopId);
+            params.put('order_sn_list', ordersn);
+            params.put('response_optional_fields', optionalfields);
+
+            String paramSign = partnerId+getShopeeDetail+timestamp+accessToken+shopId;
+
+            String sign = WebServiceUtility.generateSignatureShopee(params,partnerKey,paramSign,getShopeeDetail);
+            params.put('sign', sign);
+
+            String url_param = WebServiceUtility.concatParam(params,'','URL'); 
+
+            List<String> validate_params = new List<String>{'partner_id','sign','timestamp','access_token'};
+            List<String> missing_params = WebServiceUtility.validateParam(params, validate_params);
+            
+            if(missing_params.size() > 0)
+            {
+                String missingParams = '[\'' + String.join(missing_params, ',') + '\']';
+                errorMsg += 'the input parameter '+missingParams+' that is mandatory for processing this request is not supplied';
+                System.debug(errorMsg);  
+                isSuccess = false;
+
+                oslog.Is_Success__c = isSuccess;
+                oslog.Status_Code__c = '400' + '\r\n\r\n' + 'Bad Request';
+                oslog.Order_Reference_Number__c = ordersn;
+                oslog.Message__c = errorMsg;
+                oslog.Response_Datetime__c = Datetime.now();
+                oslog.Service_Header__c = null;
+                oslog.Service_Request__c = body;
+                oslog.Service_Response__c = null;
+                onlineLogList.add(oslog);
+                resObj.orderres = null;
+                resObj.onlineLogList = onlineLogList;
+                System.debug('resObj ' + resObj);
+                
+                return resObj;
+            }
+            else 
+            {       
+                String reqbody = '{'+
+                    '"order_sn_list": '+ '"'+ordersn+'"'+
+                '}';
+                System.debug('reqbody' + reqbody ); 
+
+                HttpRequest request = new HttpRequest();
+                request.setEndpoint('callout:Shopee_GET_Order_Detail'+url_param);
+                request.setMethod('GET');
+                request.setHeader('Content-Type', 'application/json');
+                request.setBody(reqbody);
+
+                DateTime requestTime = System.now();
+                Http http = new Http();
+                HttpResponse response = http.send(request);
+                body = url_param;
+                
+                ShopeeWebhookPayload detailwrapp= (ShopeeWebhookPayload) JSON.deserialize(response.getBody(),ShopeeWebhookPayload.class);
+
+                if (detailwrapp.error == '') {
+
+                    EscrowResponseWrapper escrowwrapp = getShopeePaymentDetail(ordersn,accessToken);
+                    onlineLogList.addAll(escrowwrapp.onlineLogList);
+
+                    InvoiceResponseWrapper invoicewrapp = getShopeeInvoiceData(ordersn,accessToken);
+                    onlineLogList.addAll(invoicewrapp.onlineLogList);
+
+                    oslog.Is_Success__c = true;
+                    oslog.Status_Code__c = '200' + '\r\n\r\n' + 'OK';
+                    oslog.Order_Reference_Number__c = ordersn;
+                    oslog.Message__c = null;
+                    oslog.Response_Datetime__c = Datetime.now();
+                    oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                    oslog.Service_Header__c =  body.toString();
+                    oslog.Service_Request__c =  request.getBody().toString();
+                    oslog.Service_Response__c = response.getBody().toString();
+                    onlineLogList.add(oslog);
+                    shopeeOrderWrapper = detailwrapp;
+                    shopeeOrderWrapper.errorMsg = errorMsg;
+                    shopeeOrderWrapper.onlineLogList = onlineLogList;
+
+                    resObj.orderres = detailwrapp;
+                    resObj.invoiceres = invoicewrapp;
+                    resObj.escrowdetail = escrowwrapp;
+                    resObj.onlineLogList = onlineLogList;
+
+                    //System.debug('resObj ' + resObj);
+
+                    return resObj;
+                } 
+                else {
+                    System.debug('Error: API call failed with status code: ' + response.getStatusCode());
+
+                    isSuccess = false;
+                    oslog.Is_Success__c = isSuccess;
+                    oslog.Status_Code__c = '400' + '\r\n\r\n' + 'Bad Request';
+                    oslog.Order_Reference_Number__c = ordersn;
+                    oslog.Message__c = detailwrapp.message;
+                    oslog.Response_Datetime__c = Datetime.now();
+                    oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                    oslog.Service_Header__c = body.toString();
+                    oslog.Service_Request__c = request.getBody().toString();
+                    oslog.Service_Response__c = response.getBody().toString();
+                    onlineLogList.add(oslog);
+
+                    resObj.orderres = null;
+                    resObj.onlineLogList = onlineLogList;
+                    return resObj;
+                }
+            }
+        } catch (Exception e) {
+            isSuccess = false;
+            errorMsg += e.getMessage();
+
+            oslog.Is_Success__c = isSuccess;
+            oslog.Status_Code__c = '500' + '\r\n\r\n' + 'Internal Error';
+            oslog.Order_Reference_Number__c = ordersn;
+            oslog.Message__c = errorMsg;
+            oslog.Response_Datetime__c = Datetime.now();
+            oslog.Send_Service_Datetime__c =String.valueOf(Datetime.now());
+            oslog.Service_Header__c = body.toString();
+            oslog.Service_Request__c = null;
+            oslog.Service_Response__c = null;
+            onlineLogList.add(oslog);
+
+            shopeeOrderWrapper.errorMsg = errorMsg;
+            shopeeOrderWrapper.onlineLogList = onlineLogList;
+
+            resObj.orderres = null;
+            resObj.onlineLogList = onlineLogList;
+
+            System.debug('resObj ' + resObj);
+
+            return resObj;    
+        }
+    }
+
+    public class InvoiceResponseWrapper {
+        public String request_id { get; set; }
+        public String error { get; set; }
+        public String message { get; set; }
+        public List<InvoiceInfo> invoice_info_list { get; set; }
+        public List<Online_Service_Log__c> onlineLogList {get;set;}
+    }
+
+    public class InvoiceInfo {
+        public String order_sn { get; set; }
+        public String invoice_type { get; set; }
+        public InvoiceDetail invoice_detail { get; set; }
+        public Boolean is_requested { get; set; }
+        public String error { get; set; }
+    }
+
+    public class InvoiceDetail {
+        public String name { get; set; }
+        public String email { get; set; }
+        public String address { get; set; }
+        public String phone_number { get; set; }
+        public String tax_id { get; set; }
+        public AddressBreakdown address_breakdown { get; set; }
+
+        // Company Details
+        public String company_head_office { get; set; }
+        public String company_name { get; set; }
+        public String company_branch_name { get; set; }
+        public String company_branch_id { get; set; }
+        public String company_type { get; set; }
+        public String company_email { get; set; }
+        public String company_tax_id { get; set; }
+        public String company_address { get; set; }
+        public CompanyAddressBreakdown company_address_breakdown { get; set; }
+        public String company_full_address { get; set; }
+    }
+
+    public class AddressBreakdown {
+        public String region { get; set; }
+        public String state { get; set; }
+        public String city { get; set; }
+        public String district { get; set; }
+        public String town { get; set; }
+        public String postcode { get; set; }
+        public String detailed_address { get; set; }
+        public String additional_info { get; set; }
+        public String full_address { get; set; }
+    }
+
+    public class CompanyAddressBreakdown {
+        public String company_region { get; set; }
+        public String company_state { get; set; }
+        public String company_city { get; set; }
+        public String company_district { get; set; }
+        public String company_town { get; set; }
+        public String company_postcode { get; set; }
+        public String company_detailed_address { get; set; }
+        public String company_additional_info { get; set; }
+    }
+    
+    public static InvoiceResponseWrapper getShopeeInvoiceData(String ordersn,String accessToken)
+    {
+        String errorMsg = '';
+        InvoiceResponseWrapper invoiceWrapper = new InvoiceResponseWrapper();
+        List<Online_Service_Log__c> onlineLogList = new List<Online_Service_Log__c>();
+        Online_Service_Log__c oslog = new Online_Service_Log__c();
+        oslog.Service_Name__c = System.label.Shopee_Get_Buyer_Invoice_Data; //'Shopee Get Invoice Data';
+        Long dateTimes = Datetime.now().getTime();
+        Long tt = dateTimes / 1000; 
+        String timestamp = tt.toString();
+        Map<String,String> params = new Map<String,String>();
+
+        params.put('access_token', accessToken);
+        params.put('order_sn', ordersn);
+        params.put('partner_id', partnerId);
+        params.put('timestamp', timestamp);
+        params.put('shop_id', shopId);
+        System.debug('partnerKey:'+partnerKey);
+
+        String paramSign = partnerId+getBuyerInvoice+timestamp+accessToken+shopId;
+        String sign = WebServiceUtility.generateSignatureShopee(params,partnerKey,paramSign,getBuyerInvoice);
+        params.put('sign', sign);
+
+        String url_param = WebServiceUtility.concatParam(params,'', 'URL'); 
+
+        List<String> validate_params = new List<String>{'partner_id','sign','timestamp','order_sn','access_token'};
+        List<String> missing_params = new List<String>();
+        for(String param : validate_params)
+        {
+            if(params.containsKey(param))
+            {
+                if(params.get(param) == null || params.get(param) == '')
+                {
+                    missing_params.add(param);
+                }
+            }
+            else {
+                missing_params.add(param);
+            }
+        }
+        
+
+        if(missing_params.size() > 0)
+        {
+            String missingParams = '[\'' + String.join(missing_params, ',') + '\']';
+            errorMsg += 'the input parameter '+missingParams+' that is mandatory for processing this request is not supplied';
+            System.debug(errorMsg);  
+            return null;
+        }
+        else 
+        {
+            try {
+                HttpRequest request = new HttpRequest();
+                request.setEndpoint('callout:Shopee_GET_Inovoice_Info'+url_param);
+                request.setMethod('POST');
+                request.setHeader('Content-Type', 'application/json');
+                
+                DateTime requestTime = System.now();
+                String reqbody = '{'+
+                    '"queries": ['+ 
+                        '{' +
+                            '"order_sn": '+ '"'+ordersn+'"'+
+                        '}' +
+                    ']'+   
+                '}';
+                request.setBody(reqbody);
+                Http http = new Http();
+                HttpResponse response = http.send(request);
+
+                System.debug('request Body: ' + request.getBody());
+                System.debug('Response Body: ' + response.getBody());
+                System.debug('Status Code: ' + response.getStatusCode());
+            
+                oslog = new Online_Service_Log__c();
+                oslog.Service_Name__c = System.label.Shopee_Get_Buyer_Invoice_Data;
+                oslog.Order_Reference_Number__c = ordersn;
+                oslog.Response_Datetime__c = Datetime.now();
+                oslog.Send_Service_Datetime__c = requestTime.format('EEE, MMM d yyyy HH:mm:ss', 'Asia/Bangkok');
+                oslog.Service_Header__c = request.getEndpoint();
+                oslog.Service_Request__c = request.getBody().toString();
+            
+                if (response.getStatusCode() == 200) {
+                    if (String.isBlank(response.getBody())) {
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '200 Empty Response';
+                        oslog.Message__c = 'API response body is empty.';
+                        oslog.Service_Response__c = 'No response data';
+                        
+                        onlineLogList.add(oslog);
+                        invoiceWrapper = new InvoiceResponseWrapper();
+                        invoiceWrapper.onlineLogList = onlineLogList;
+                        return invoiceWrapper;
+                    }
+            
+                    InvoiceResponseWrapper invoiceData;
+                    try {
+                        invoiceData = (InvoiceResponseWrapper) JSON.deserialize(response.getBody(), InvoiceResponseWrapper.class);
+                    } catch (Exception ex) {
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '200 Invalid JSON';
+                        oslog.Message__c = 'Error: Response is not valid JSON.';
+                        oslog.Service_Response__c = response.getBody();
+                        
+                        onlineLogList.add(oslog);
+                        invoiceWrapper = new InvoiceResponseWrapper();
+                        invoiceWrapper.onlineLogList = onlineLogList;
+                        return invoiceWrapper;
+                    }
+            
+                    System.debug('Deserialized invoiceData: ' + invoiceData);
+            
+                    if (invoiceData != null && String.isBlank(invoiceData.error)) {
+                        oslog.Is_Success__c = true;
+                        oslog.Status_Code__c = '200 OK';
+                        oslog.Message__c = invoiceData.message;
+                        oslog.Service_Response__c = response.getBody();
+                        
+                        onlineLogList.add(oslog);
+                        invoiceData.onlineLogList = onlineLogList;
+                        return invoiceData;
+                    } else {
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '400 Bad Request';
+                        oslog.Message__c = invoiceData != null ? invoiceData.message : 'Unknown error from API.';
+                        oslog.Service_Response__c = response.getBody();
+                        
+                        onlineLogList.add(oslog);
+                        invoiceData.onlineLogList = onlineLogList;
+                        return invoiceData;
+                    }
+                } else {
+                    oslog.Is_Success__c = false;
+                    oslog.Status_Code__c = response.getStatusCode() + ' ' + response.getStatus();
+            
+                    if (response.getStatusCode() == 404) {
+                        oslog.Message__c = 'Error: Page Not Found. No JSON response.';
+                    } else {
+                        oslog.Message__c = 'Error ' + response.getStatusCode();
+                    }
+            
+                    oslog.Service_Response__c = String.isBlank(response.getBody()) ? 'No response body' : response.getBody();
+                    oslog.Service_Request__c = null; 
+            
+                    onlineLogList.add(oslog);
+                    invoiceWrapper = new InvoiceResponseWrapper();
+                    invoiceWrapper.onlineLogList = onlineLogList;
+                    return invoiceWrapper;
+                }
+            } catch (Exception e) {
+                System.debug('Exception in API call: ' + e.getMessage());
+            
+                oslog.Is_Success__c = false;
+                oslog.Status_Code__c = '500 Exception';
+                oslog.Message__c = 'Exception: ' + e.getMessage();
+                oslog.Service_Response__c = 'Error occurred during API call.';
+            
+                onlineLogList.add(oslog);
+                invoiceWrapper = new InvoiceResponseWrapper();
+                invoiceWrapper.onlineLogList = onlineLogList;
+                return invoiceWrapper;
+            }    
+        }
+    }
+
+    @future(callout=true)
+    public static void callAPIMaskAsShipShopee(Set<String> orderID){
+        String errorMsg = '';
+        String trackingNumber;
+        String trackingURL;
+        String platformOrderNumber;
+        String accessToken;
+        List<Online_Service_Log__c> onlineLogList = new List<Online_Service_Log__c>();
+        List<Shopee_Configuration__c> shopeeConfig = [SELECT Access_Token__c,Refresh_Token__c,Code__c FROM Shopee_Configuration__c LIMIT 1];   
+
+        if(shopeeConfig.size()  > 0 ){
+            if(shopeeConfig[0].Access_Token__c != null )
+            {
+                accessToken = shopeeConfig[0].Access_Token__c;
+            }
+        }
+
+        List<Order> ordList = [SELECT Id, Status, AccountId, Account.Phone, Account.PersonMobilePhone, 
+                            OrderReferenceNumber, Order_Channel__c, ERP_Order_Number__c, Platform_Order_Number__c 
+                            FROM Order 
+                            WHERE Id IN :orderID AND Order_Channel__c = 'Shopee'
+                            ORDER BY CreatedDate DESC];
+
+        System.debug('ordList: ' + ordList);
+
+        if (ordList.isEmpty()) {
+            System.debug('No orders found.');
+            return;
+        }
+
+        if(ordList.size() > 0){
+            for (Order ord : ordList) {
+                if (ord.Platform_Order_Number__c != null) {
+                    trackingNumber = ord.Account.Phone + ord.Platform_Order_Number__c;
+                    trackingURL = skyfrogpath + ord.ERP_Order_Number__c;
+                    platformOrderNumber  = ord.Platform_Order_Number__c;
+                }
+            }
+        }
+
+        Long dateTimes = Datetime.now().getTime();
+        Long tt = dateTimes / 1000; 
+        String timestamp = tt.toString();
+        Map<String,String> params = new Map<String,String>();
+        params.put('access_token', accessToken);
+        params.put('order_sn', platformOrderNumber);
+        params.put('partner_id', partnerId);
+        params.put('timestamp', timestamp);
+        params.put('shop_id', shopId);
+
+        String paramSign = partnerId+shipOrder+timestamp+accessToken+shopId;
+        String sign = WebServiceUtility.generateSignatureShopee(params,partnerKey,paramSign,getBuyerInvoice);
+        params.put('sign', sign);
+
+        String url_param = WebServiceUtility.concatParam(params,'', 'URL'); 
+
+        try {
+                HttpRequest req = new HttpRequest();
+                req.setEndpoint('callout:Shopee_Ship_Order'+url_param);
+                req.setMethod('POST');
+                req.setHeader('Content-Type', 'application/json');
+                
+                DateTime requestTime = System.now();
+                String requestBodyString = '{ '+
+                '   "order_sn": "'+ platformOrderNumber + '",'+
+                '   "non_integrated": {'+ 
+                '       "tracking_number": "'+ trackingNumber + '"'+
+                '   }'+
+                '}';
+                req.setBody(requestBodyString);
+                Http http = new Http();
+                HttpResponse res = http.send(req);
+
+                System.debug('request Body: ' + req.getBody());
+                System.debug('Response Body: ' + res.getBody());
+                System.debug('Status Code: ' + res.getStatusCode());
+            
+            
+                Online_Service_Log__c oslog = new Online_Service_Log__c();
+                    oslog.Service_Name__c = System.Label.MaskAsShip_Shopee;
+                    oslog.Service_Header__c = url_param;
+                    oslog.Order_Reference_Number__c = platformOrderNumber;
+                    oslog.Service_Request__c = req.getBody();
+                    oslog.Response_Datetime__c = DateTime.now();
+                    oslog.Send_Service_Datetime__c = DateTime.now().format('EEE, MMM d yyyy HH:mm:ss', 'Asia/Bangkok');
+        
+                if (res.getStatusCode() == 200) {
+                    oslog.Is_Success__c = true;
+                    oslog.Status_Code__c = '200 OK';
+                    oslog.Service_Response__c = res.getBody();
+                } else {
+                    oslog.Is_Success__c = false;
+                    oslog.Status_Code__c = String.valueOf(res.getStatusCode())  + '\r\n\r\n' + String.valueOf(res.getStatus()) ;
+                    oslog.Service_Response__c = res.getBody();
+                }
+                onlineLogList.add(oslog);
+                    
+            } catch (Exception e) {
+                System.debug('Error To UpdateOrder : ' + e.getMessage() + ' TypeName: ' + e.getTypeName() + ' StackTrace: ' + e.getStackTraceString());
+                Online_Service_Log__c errorLog = new Online_Service_Log__c();
+                errorLog.Order_Reference_Number__c = platformOrderNumber;
+                errorLog.Service_Name__c = System.Label.MaskAsShip_Shopee;
+                errorLog.Message__c = e.getMessage() +  e.getStackTraceString();
+                errorLog.Service_Header__c = null;
+                errorLog.Is_Success__c = false;
+                errorLog.Status_Code__c = '500 Internal Error';
+                errorLog.Service_Response__c = e.getMessage();
+                errorLog.Response_Datetime__c = DateTime.now();
+                onlineLogList.add(errorLog);
+            }
+            
+            if (!onlineLogList.isEmpty()) {
+                OnlineServiceLog.CreateOnlineServiceLog(onlineLogList);
+            }       
+
+    }
+
+}

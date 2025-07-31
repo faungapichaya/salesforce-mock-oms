@@ -1,0 +1,409 @@
+//
+@RestResource(urlMapping='/ShopeeWebhook')
+global without sharing class ShopeeService {
+
+    public Data data { get; set; }
+    public String shop_id { get; set; }
+    public Integer code { get; set; }
+    public Long timestamp { get; set; }   
+
+    public class Data {
+        public String ordersn { get; set; }
+        public String status { get; set; }
+        public String completed_scenario { get; set; }
+        public Long update_time { get; set; }
+
+    }
+
+    @HttpPost
+    global static void receiveWebhook() {
+        RestRequest req = RestContext.request; // Get the HTTP request
+        RestResponse res = RestContext.response; // Prepare the HTTP response
+
+
+        Map<String, String> headers = req.headers;
+        String formattedHeaders = JSON.serializePretty(headers);
+        //System.debug('formattedHeaders : ' + formattedHeaders);
+
+        String partnet_key = settingsMap.containsKey('SHOPEE_PARTNER_KEY') ? String.valueOf(settingsMap.get('SHOPEE_PARTNER_KEY')) : '';
+        String webhook_url = settingsMap.containsKey('SHOPEE_WEBHOOK_URL') ? String.valueOf(settingsMap.get('SHOPEE_WEBHOOK_URL')) : '';
+
+        String requestBody = req.requestBody.toString();
+        //System.debug('requestBody: ' + requestBody);
+
+        String authorization = req.headers.get('Authorization');
+
+        Blob signed_payload = Blob.valueof(webhook_url + '|' + partnet_key);
+        DateTime requestTime = System.now();
+        DateTime dt = Datetime.now();
+        String timezone = String.valueOf(dt.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+
+        String ordersn;
+        List<Online_Service_Log__c> oliList = new List<Online_Service_Log__c>();
+        Online_Service_Log__c oslog = new Online_Service_Log__c();
+        oslog.Service_Name__c = System.Label.Shopee_Webhook;
+
+        try{
+            Set<String> shopee_Method = shopeeMethod != null ? new Set<String>(shopeeMethod.split(',')) : null;
+            //System.debug('shopee_Method '+ shopee_Method);
+
+            Map<String, Object> orderPayloadhook = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
+            String eventname;
+            String orderNumber;
+
+            if (orderPayloadhook.containsKey('data')) {
+                Map<String, Object> eventObject = (Map<String, Object>) orderPayloadhook.get('data');
+                eventName = eventObject.containsKey('status') ? String.valueOf(eventObject.get('status')) : null;
+                orderNumber = eventObject.get('ordersn') != null ? String.valueOf(eventObject.get('ordersn')) : null;
+            }
+            System.debug('eventname :'+ eventname);
+            // System.debug('updateTime :'+ cancelTime);
+    
+            Boolean isValidate = false;
+            if((eventname != null) && shopee_Method.contains(eventname) && orderNumber != null){
+                System.debug('eventname '+ true);
+            
+                if(validateChecksum){
+                    if (String.isEmpty(authorization)) {
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '401' + '\r\n\r\n' + 'Unauthorized';
+                        oslog.Message__c = 'Missing authorization header';
+                        oslog.Response_Datetime__c = Datetime.now();
+                        oslog.Send_Service_Datetime__c = String.valueOf(dt.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                        oslog.Service_Header__c = authorization  + '\n\r\n' + formattedHeaders; 
+                        oslog.Service_Request__c = req.requestBody != null ? req.requestBody.toString() : null;
+                        oslog.Service_Response__c = null;
+                        oliList.add(oslog);
+                        OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                        return;
+                    }
+                    // call function to validate inboundwebhook
+                    String calculatedChecksum = ValidateRequestUtilityService.CalculatedChecksum(partnet_key,signed_payload,'Hex');
+                    //System.debug('Webhook calculatedChecksum: ' + calculatedChecksum);
+                    isValidate = (calculatedChecksum == authorization) == true ? true : false;
+                }else{
+                    isValidate = true;
+                }
+                System.debug('Webhook isValidate: ' + isValidate);
+    
+                if(isValidate){
+                    // continue process
+                    try{
+                        if(eventname != System.Label.Shopee_CANCELLED){
+    
+                            PublicInbound_ShopeeService orderPayload = (PublicInbound_ShopeeService) JSON.deserialize(requestBody, PublicInbound_ShopeeService.class);
+                            System.debug('orderPayload '+ orderPayload);
+                            ordersn = orderPayload.data.ordersn;
+                            String shopid = orderPayload.shop_id;
+                            System.debug('ordersn '+ ordersn);
+                            System.debug('shopid '+ shopid);
+        
+                            InquiryService_Shopee.APIgetDetail_resObj  resDataDetail = InquiryService_Shopee.getShopeeOrderList(ordersn);
+                            System.debug('resDataDetail : '+ resDataDetail);
+        
+                            InquiryService_Shopee.ShopeeWebhookPayload orderDetail = (resDataDetail != null && resDataDetail.orderres != null) ? resDataDetail.orderres : null;
+                            InquiryService_Shopee.InvoiceResponseWrapper invoicedata = (resDataDetail != null && resDataDetail.invoiceres != null) ? resDataDetail.invoiceres : null;
+                            InquiryService_Shopee.EscrowResponseWrapper escrowdata = (resDataDetail != null && resDataDetail.escrowdetail != null) ? resDataDetail.escrowdetail : null;
+                            // System.debug('escrowdata : '+ escrowdata.response.order_income.items);
+
+                            List<InquiryService_Shopee.OrderList> orderList = (orderDetail != null && orderDetail.response != null && orderDetail.response.order_list != null && orderDetail.response.order_list.size() > 0) 
+                            ? orderDetail.response.order_list : new List<InquiryService_Shopee.OrderList>();
+        
+                            List<InquiryService_Shopee.InvoiceInfo> invoiceList = (invoicedata != null && invoicedata.invoice_info_list != null && invoicedata.invoice_info_list.size() > 0) 
+                            ? invoicedata.invoice_info_list : new List<InquiryService_Shopee.InvoiceInfo>();
+
+                            List<InquiryService_Shopee.OrderItem> escrowList = (escrowdata != null && escrowdata.response != null && escrowdata.response.order_income != null && escrowdata.response.order_income.items.size() > 0) 
+                            ? escrowdata.response.order_income.items : new List<InquiryService_Shopee.OrderItem>();
+        
+                            List<Online_Service_Log__c> reslog = (resDataDetail != null && resDataDetail.onlineLogList != null && resDataDetail.onlineLogList.size() > 0) 
+                            ? resDataDetail.onlineLogList : new List<Online_Service_Log__c>();
+        
+                            // System.debug('orderDetail '+ orderDetail);
+                            // System.debug('invoiceList '+ invoiceList);
+                            // System.debug('invoicedata '+ invoicedata);
+                            // System.debug('escrowList '+ escrowList);
+                            // System.debug('reslog '+ reslog);
+        
+                            SaveOrderInformationService.OrderPayloadWrapper orderpayloadWrapper = new SaveOrderInformationService.OrderPayloadWrapper();
+                            SaveOrderInformationService.AccountWrapper accWrapper = new SaveOrderInformationService.AccountWrapper();
+                            SaveOrderInformationService.ShippingAddressWrapper shipaddWrapper = new SaveOrderInformationService.ShippingAddressWrapper();
+                            SaveOrderInformationService.OrderWrapper orderWrapper = new SaveOrderInformationService.OrderWrapper();
+                            SaveOrderInformationService.AddressMasterWrapper adddressMasterWrapper = new SaveOrderInformationService.AddressMasterWrapper();
+                            List<SaveOrderInformationService.OrderItemWrapper> lstItems = new List<SaveOrderInformationService.OrderItemWrapper>();
+        
+                            if (resDataDetail != null) {
+                                if(orderList.size() > 0){
+                                    for (InquiryService_Shopee.OrderList odData : orderList) {
+        
+                                        DateTime payTime;
+                                        if(odData.pay_time != null){
+                                            Long unixTimestamp = odData.pay_time;
+                                            Long timestampInMilliseconds = unixTimestamp * 1000;
+                                            payTime = DateTime.newInstance(timestampInMilliseconds);
+                                        }
+                                        // System.debug('Converted payTime: ' + payTime);
+        
+                                        DateTime createtime;
+                                        if(odData.create_time != null){
+                                            Long crateTimestamp = odData.create_time;
+                                            Long createtimestampInMilliseconds = crateTimestamp * 1000;
+                                            createtime = DateTime.newInstance(createtimestampInMilliseconds);
+                                        }
+                                        // System.debug('Converted createtime: ' + createtime);
+        
+                                        Decimal discountAmount = 0;
+                                        String promotiontype;
+        
+                                        String voucherString;
+                                        if(escrowdata != null && escrowList.size() > 0){
+                                            List<String> sellerVoucherCodes = escrowdata.response.order_income.seller_voucher_code;
+                                            voucherString = String.join(sellerVoucherCodes, ',');
+                                        }
+                                        
+                                                                            
+                                        if(escrowList.size() > 0){
+    
+                                            for(InquiryService_Shopee.OrderItem escrData : escrowList){
+                                                discountAmount = discountAmount + (escrData.discount_from_voucher_seller + escrData.discount_from_voucher_shopee + escrData.discount_from_coin);
+                                                SaveOrderInformationService.OrderItemWrapper itemWrapper = new SaveOrderInformationService.OrderItemWrapper();
+                                                itemWrapper.unitPrice = (escrData.selling_price - (escrData.discount_from_coin + escrData.discount_from_voucher_seller + escrData.discount_from_voucher_shopee))/escrData.quantity_purchased;
+                                                itemWrapper.listPrice =  null;
+                                                itemWrapper.quantity = escrData.quantity_purchased;
+                                                itemWrapper.product2Id = String.valueOf(escrData.item_id);  //itemData.sku;  
+                                                itemWrapper.productSku = (escrData.item_sku != null && escrData.item_sku != '') ? escrData.item_sku : escrData.model_sku;  //itemData.item_sku;  
+                                                itemWrapper.discountfromCoin = escrData.discount_from_coin; //discount_from_coin
+                                                itemWrapper.discountfromVoucherSeller = escrData.discount_from_voucher_seller; //discount_from_voucher_seller
+                                                itemWrapper.discountfromVoucherShopee = escrData.discount_from_voucher_shopee; //discount_from_voucher_shopee
+                                                itemWrapper.sellerDiscountShopee = escrData.seller_discount; //seller_discount
+                                                itemWrapper.shopeeDiscount = escrData.shopee_discount; //shopee_discount
+                                                itemWrapper.originalPrice = escrData.original_price; //original_price
+                                                itemWrapper.sellingPrice = escrData.selling_price;//selling_price
+                                                itemWrapper.discountedPrice =  escrData.discounted_price;//discounted_price
+
+                                                itemWrapper.marketingPrice = escrData.original_price;
+                                                itemWrapper.erpItemDiscount = escrData.discount_from_voucher_seller;
+
+                                                System.debug('itemWrapper '+ itemWrapper);
+                                                lstItems.add(itemWrapper);
+                                            }
+                                        }
+                                        System.debug('lstItems new : '+ lstItems);
+
+                                        orderWrapper.accountId = null;
+                                        orderWrapper.orderReferenceNumber = 'SP_' + odData.order_sn;
+                                        orderWrapper.effectiveDate = (createtime != null) ? createtime.date() : null;
+                                        orderWrapper.status = 'Draft'; 
+                                        orderWrapper.orderChannel = 'Shopee';
+                                        orderWrapper.discountAmount = discountAmount != null ? discountAmount : 0;
+                                        orderWrapper.platformStatus = odData.order_status;
+                                        orderWrapper.cancelReason = odData.cancel_reason;
+                                        orderWrapper.sellerDiscountCode = voucherString;//promotiontype;
+                                        orderWrapper.shippingAddressId = null;
+                                        orderWrapper.shippingAddressDetail = odData.recipient_address.full_address;
+                                        orderWrapper.shippingProvince = odData.recipient_address.state;
+                                        orderWrapper.shippingDistrict =  odData.recipient_address.city;
+                                        orderWrapper.shippingSubDistrict = odData.recipient_address.district;
+                                        orderWrapper.shippingPostalCode = odData.recipient_address.zipcode;
+                                        orderWrapper.shippingRegion = odData.recipient_address.region;
+                                        orderWrapper.shippingRemark = null;
+                                        orderWrapper.paymentMethod = odData.payment_method;
+                                        orderWrapper.paymentDate = (payTime != null) ? payTime : null; 
+                                        orderWrapper.externalId = 'SP_' + odData.order_sn; 
+                                        orderWrapper.taxInvoiceAddressID = null;
+                                        orderWrapper.checkTaxDelivery = null;
+                                        orderWrapper.remark = odData.message_to_seller;
+                                        orderWrapper.platformOrderNumber = odData.order_sn;
+
+                                        shipaddWrapper.accountId  = null;
+                                        shipaddWrapper.name = null;
+                                        shipaddWrapper.addressType = null;
+                                        shipaddWrapper.addressDetail = odData.recipient_address.full_address;
+                                        shipaddWrapper.province = odData.recipient_address.state;
+                                        shipaddWrapper.district =  odData.recipient_address.city;
+                                        shipaddWrapper.subDistrict = odData.recipient_address.district;
+                                        shipaddWrapper.postalCode = odData.recipient_address.zipcode;
+                                        shipaddWrapper.region = odData.recipient_address.region;
+                                        shipaddWrapper.recipientName = odData.recipient_address.name;
+                                        shipaddWrapper.recipientPhone = odData.recipient_address.phone;
+                                        System.debug('shipaddWrapper '+ shipaddWrapper);
+        
+                                        accWrapper.accountName = odData.recipient_address.name;
+                                        accWrapper.birthdate = null;
+                                        accWrapper.mobile = odData.recipient_address.phone;
+                                        accWrapper.email = null;
+                                        accWrapper.customerType = 'Normal';
+
+                                        System.debug('accWrapper '+ accWrapper);
+                                    }
+                                }
+                                    if(invoiceList.size() > 0){
+                                        for(InquiryService_Shopee.InvoiceInfo invData : invoiceList){
+                                            System.debug('invData: ' + invData);
+                                            if(invData.invoice_detail != null){
+                                                if (invData.invoice_detail.address_breakdown != null) {
+                                                    orderWrapper.taxInvoiceAddress = invData.invoice_detail.address_breakdown.detailed_address;
+                                                    orderWrapper.taxInvoiceProvince = invData.invoice_detail.address_breakdown.state;
+                                                    orderWrapper.taxInvoiceDistrict = invData.invoice_detail.address_breakdown.city;
+                                                    orderWrapper.taxInvoiceSubDistrct = invData.invoice_detail.address_breakdown.town;
+                                                    orderWrapper.taxInvoicePostalCode = invData.invoice_detail.address_breakdown.postcode;
+                                                    orderWrapper.taxInvoiceCountry = invData.invoice_detail.address_breakdown.region;
+                                                    orderWrapper.taxInvoiceAddressFullText = invData.invoice_detail.address_breakdown.full_address;
+                                                    orderWrapper.taxId = invData.invoice_type == 'company' ? invData.invoice_detail.company_tax_id : invData.invoice_detail.tax_id; 
+                                                    orderWrapper.taxInvoiceName = invData.invoice_type == 'company' ? invData.invoice_detail.company_name : invData.invoice_detail.name;
+        
+                                                    if(invData.invoice_type == 'company') {
+                                                        orderWrapper.branchCode =  invData.invoice_detail.company_branch_id != null ? invData.invoice_detail.company_branch_id : null; 
+                                                        orderWrapper.branchName = invData.invoice_detail.company_branch_name != null ? invData.invoice_detail.company_branch_name : null;
+                                                    }
+                                                    
+                                                    adddressMasterWrapper.name = invData.invoice_detail.name != null ? invData.invoice_detail.name : null;
+                                                    adddressMasterWrapper.country  = invData.invoice_detail.address_breakdown.region != null ? invData.invoice_detail.address_breakdown.region : null;
+                                                    adddressMasterWrapper.region = invData.invoice_detail.address_breakdown.region != null ? invData.invoice_detail.address_breakdown.region : null;
+                                                    adddressMasterWrapper.regionCode = null;
+                                                    adddressMasterWrapper.province  = invData.invoice_detail.address_breakdown.state != null ? invData.invoice_detail.address_breakdown.state : null;
+                                                    adddressMasterWrapper.provinceCode = null;
+                                                    adddressMasterWrapper.district = invData.invoice_detail.address_breakdown.city != null ? invData.invoice_detail.address_breakdown.city : null;
+                                                    adddressMasterWrapper.districtCode =  null;
+                                                    adddressMasterWrapper.subDistrict = invData.invoice_detail.address_breakdown.town != null ? invData.invoice_detail.address_breakdown.town : null;
+                                                    adddressMasterWrapper.subDistrictCode = null;
+                                                    adddressMasterWrapper.postalCode  = invData.invoice_detail.address_breakdown.postcode != null ? invData.invoice_detail.address_breakdown.postcode : null;
+                                                    
+                                                }
+                                            }
+                                        }
+                                    }   
+                                    
+                                    orderpayloadWrapper.accountWrapper = accWrapper;
+                                    orderpayloadWrapper.shippingAddressWrapper = shipaddWrapper;
+                                    orderpayloadWrapper.orderWrapper = orderWrapper;
+                                    orderpayloadWrapper.orderItemWrapper = lstItems;
+                                    orderpayloadWrapper.adddressMasterWrapper = adddressMasterWrapper;
+                                
+                                    System.debug('orderpayloadWrapper '+ orderpayloadWrapper);
+                                    SaveOrderInformationService.SaveOrderServiceResult result = SaveOrderInformationService.saveOrderService(orderpayloadWrapper);
+                                    Boolean isSuccess = result.isSuccess;
+                                     
+                                    oslog.Service_Request__c = req.requestBody.toString();
+                                    oslog.Order_Reference_Number__c = ordersn;
+
+                                    if(isSuccess){
+                                        oslog.Status_Code__c =  '200' + '\r\n\r\n' + 'OK';
+                                        oslog.Is_Success__c = isSuccess;
+                                    }else{
+                                        oslog.Status_Code__c =  '500' + '\r\n\r\n' + 'Internal Error';
+                                        oslog.Is_Success__c = false;
+                                    }
+                                    
+                                    oslog.Message__c = result.message;
+                                    oslog.Response_Datetime__c = dt;
+                                    oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                                    oslog.Service_Header__c = formattedHeaders;
+                                    oslog.Service_Response__c = null;
+                                    oliList.add(oslog);
+                                    oliList.addAll(reslog); 
+                                    System.debug('oliList '+ oliList);
+                                    OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                                    return;
+                            }
+                            else{
+                                if(reslog != null){
+                                    oslog.Order_Reference_Number__c = ordersn;
+                                    oslog.Message__c = 'Error OrderDetail ISNULL' ;
+                                    oslog.Response_Datetime__c = Datetime.now();
+                                    oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                                    oslog.Service_Header__c = formattedHeaders;
+                                    oslog.Service_Request__c = req.requestBody != null ? req.requestBody.toString() : null;
+                                    oslog.Service_Response__c = null;
+                                    oslog.Is_Success__c = false;
+                                    oliList.add(oslog);
+                                    oliList.addAll(reslog); 
+                                    OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                                }
+                                return;
+                            }
+                        }else{
+                            //cancel order 
+                            String sporderNumber = 'SP_'+orderNumber;
+                            SaveOrderInformationService.SaveOrderServiceResult result = SaveOrderInformationService.updateCancelOrder(sporderNumber);
+                            oslog.Status_Code__c = '200' + '\r\n\r\n' + 'OK' ;
+                            oslog.Is_Success__c = result.isSuccess;
+                            oslog.Order_Reference_Number__c = orderNumber;
+                            oslog.Message__c = result.message;
+                            oslog.Response_Datetime__c = dt;
+                            oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                            oslog.Service_Header__c = formattedHeaders;
+                            oslog.Service_Request__c = req.requestBody.toString();
+                            oslog.Service_Response__c = null;
+                            oliList.add(oslog);
+                            OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                            return;
+                        }
+    
+                    } catch (Exception e) {
+                        // Handle errors
+                        System.debug('Error: ' + e.getMessage() + ' TypeName: ' + e.getTypeName() + ' StackTrace: ' + e.getStackTraceString());
+                        String errorMessage = 'Message: ' + e.getMessage() + ' TypeName: ' + e.getTypeName() + ' StackTrace: ' + e.getStackTraceString();
+                        oslog.Is_Success__c = false;
+                        oslog.Status_Code__c = '500' + '\r\n\r\n' + 'Internal Error' ;
+                        oslog.Order_Reference_Number__c = ordersn;
+                        oslog.Message__c = 'Failed to process webhook' + errorMessage;
+                        oslog.Response_Datetime__c = dt;
+                        oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                        oslog.Service_Header__c = formattedHeaders;
+                        oslog.Service_Request__c = req.requestBody.toString();
+                        oslog.Service_Response__c = null;
+                        oliList.add(oslog);
+                        OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                        return;
+                    }
+                    
+                }else{
+                    oslog.Is_Success__c = false;
+                    oslog.Order_Reference_Number__c = ordersn;
+                    oslog.Status_Code__c = '401' + '\r\n\r\n' + 'Unauthorized';
+                    oslog.Message__c = 'Failed Validated signature';
+                    oslog.Service_Header__c = signed_payload.toString() + '\n\r\n' + formattedHeaders;
+                    oslog.Response_Datetime__c = Datetime.now();
+                    oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                    oslog.Service_Request__c = req.requestBody.toString();
+                    oslog.Service_Response__c = null;
+                    oliList.add(oslog);
+                    OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                    return;
+                }
+            }else{
+                oslog.Is_Success__c = true;
+                oslog.Service_Request__c = req.requestBody.toString();
+                oslog.Status_Code__c = '200' + '\r\n\r\n' + 'OK';
+                oslog.Response_Datetime__c = dt;
+                oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+                oslog.Service_Header__c = formattedHeaders;
+                oslog.Service_Response__c = null;
+                oslog.Order_Reference_Number__c = orderNumber;
+                oslog.Message__c = 'Order :' + (orderNumber != null ? orderNumber : 'null') + ' , Platform Status : ' + (eventName != null ? eventName : 'null') + ' Skip SaveOrder Process.';
+                oliList.add(oslog);
+                OnlineServiceLog.CreateOnlineServiceLog(oliList);
+                return;
+            }
+
+        }catch (Exception e) {
+            // Handle errors
+            System.debug('Error: ' + e.getMessage() + ' TypeName: ' + e.getTypeName() + ' StackTrace: ' + e.getStackTraceString());
+            String errorMessage = 'Message: ' + e.getMessage() + ' TypeName: ' + e.getTypeName() + ' StackTrace: ' + e.getStackTraceString();
+            oslog.Is_Success__c = false;
+            oslog.Status_Code__c = '500' + '\r\n\r\n' + 'Internal Error';
+            oslog.Order_Reference_Number__c = ordersn;
+            oslog.Message__c = errorMessage;
+            oslog.Response_Datetime__c = dt;
+            oslog.Send_Service_Datetime__c = String.valueOf(requestTime.format('EEE, MMM d yyyy HH:mm:ss','Asia/Bangkok'));
+            oslog.Service_Header__c = formattedHeaders;
+            oslog.Service_Request__c = req.requestBody.toString();
+            oslog.Service_Response__c = null;
+            oliList.add(oslog);
+            OnlineServiceLog.CreateOnlineServiceLog(oliList);
+            return;
+        }
+
+    }
+
+}
